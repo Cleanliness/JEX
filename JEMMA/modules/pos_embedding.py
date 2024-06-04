@@ -9,6 +9,7 @@ class RoPEDescriptor(NamedTuple):
     Contains params for rotary embedding layer
 
     Assumes embeddings have an even number of dimensions
+    i.e. d_model % 2 == 0
     """
     theta: jnp.ndarray  # minimum rotary angles (d_model / 2,)
 

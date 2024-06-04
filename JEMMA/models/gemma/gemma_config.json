@@ -50,8 +50,7 @@
     "dtype": "BF16",
     "shape": [
       16384,
-      20,
-      48
+      2048
     ],
     "data_offsets": [
       1182797824,
@@ -90,7 +89,7 @@
       1259347968
     ]
   },
-  "model.layers.0.self\r\n_attn.q_proj.weight": {
+  "model.layers.0.self_attn.q_proj.weight": {
     "dtype": "BF16",
     "shape": [
       2048,
@@ -145,7 +144,7 @@
       1403006976
     ]
   },
-  "m\r\nodel.layers.1.mlp.up_proj.weight": {
+  "model.layers.1.mlp.up_proj.weight": {
     "dtype": "BF16",
     "shape": [
       16384,

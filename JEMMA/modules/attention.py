@@ -1,18 +1,34 @@
 import jax
 import jax.numpy as jnp
+from jax.experimental import pallas as pl       # triton-like API
 
 from typing import NamedTuple
 
 
 class AtnDescriptor(NamedTuple):
     """
-    Contains params for MHA layer 
+    Contains params for attention layer (MHA, MQA)
+
+    d_model: model dimension
+    H_q: number of heads for Q
+    H_k: number of heads for K
+    H_v: number of heads for V
+
+    q_proj: project residual to query space
+    k_proj: project residual to key space
+    v_proj: project residual to value space
+    o_proj: project output to residual stream
+
+    See: https://transformer-circuits.pub/2021/framework/index.html
     """
-    q_proj: jnp.ndarray     # (H, d_model, d_k)
-    k_proj: jnp.ndarray     # (H, d_model, d_k)
-    v_proj: jnp.ndarray     # (H, d_model, d_v)
+
+    q_proj: jnp.ndarray     # (H_q, d_k, d_model)
+    k_proj: jnp.ndarray     # (H_k, d_k, d_model)
+    v_proj: jnp.ndarray     # (H_v, d_v, d_model)
+    o_proj: jnp.ndarray     # (d_model, H_v*d_v)
 
 
+# Fallbacks, probably use flash attention in practice
 def MHA(q: jnp.ndarray, k: jnp.ndarray, v: jnp.ndarray, atn_descriptor: AtnDescriptor):
     """
     Vanilla multi-head attention
@@ -33,12 +49,81 @@ def MHA(q: jnp.ndarray, k: jnp.ndarray, v: jnp.ndarray, atn_descriptor: AtnDescr
     return output
 
 
-def MQA(q: jnp.array, k: jnp.array, v: jnp.array, atn_descriptor: AtnDescriptor):
+def MQA(q: jnp.array, atn_descriptor: AtnDescriptor):
     """
-    Multi-query attention (1 head for K and V, multiple heads for Q)
+    Multi-query (self) attention (1 head for K and V, multiple heads for Q)
+
+    Note: number of dimensions in a head is implicit in the shape of k and v_proj
+    - We'll denote this as d_k and d_v
+
+    Args:
+        q: (B, T, d_model)
     """
     d_k = atn_descriptor.q_proj.shape[-1]
-    
-    q = jnp.einsum('Bnd,Hdk->BHnk', q, atn_descriptor.q_proj)           # contraction along d_k
-    k = jnp.einsum('Bnd,Hdk->BHnk', k, atn_descriptor.k_proj)           # contraction along d_k
-    v = jnp.einsum('Bnd,Hdv->BHnv', v, atn_descriptor.v_proj)           # contraction along d_v
+
+    # project: (B, H, T, d_model) -> (B, H, T, d_k)
+    # contraction along d_model (m)
+    q_p = jnp.einsum('BTm,Hkm->BHTk', q, atn_descriptor.q_proj)
+    k_p = jnp.einsum('BTm,Hkm->BHTk', q, atn_descriptor.k_proj)           
+    v_p = jnp.einsum('BTm,Hvm->BHTv', q, atn_descriptor.v_proj)           
+
+    # broadcast K to V, recall K has 1 head
+    # Q: (B, H, T, d_model), K: (B, 1, T, d_model) -> (B, H, T, T)
+    QK = jnp.einsum('BHTk,BHRk->BHTR', q_p, k_p) / jnp.sqrt(d_k)
+    attn_weights = jax.nn.softmax(QK, axis=-1)
+
+    # apply attention weights to V
+    # (B, H, T, T) x (B, H, T, d_v) -> (B, H, T, d_v)
+    o = attn_weights @ v_p
+ 
+    # concatenate heads (B, H, T, d_v) -> (B, T, H*d_v)
+    o = o.transpose((0, 2, 1, 3)).reshape((q.shape[0], q.shape[1], -1))
+
+    # project output (B, T, H*d_v) @ (d_model, H*d_v) -> (B, T, d_model)
+    o_p = jnp.einsum('BTv,mv->BTm', o, atn_descriptor.o_proj)
+    return o_p 
+
+
+def GQA(q: jnp.array, atn_descriptor):
+    """
+    Grouped query attention
+    """
+
+    # TODO: implement
+    pass
+
+
+if __name__ == "__main__":
+    rng = jax.random.PRNGKey(0)
+
+    # d_query, d_key, d_value = 2
+    # d_model = 8
+    # T = 10
+
+    B = 5
+    T = 10
+    d_model = 8
+    d_k = 2
+    d_value = d_k
+    d_v = 2
+    H = 3
+    x = jnp.arange(B*T*d_model).reshape((B, T, d_model))
+    print("input:", x.shape)
+
+    # seq_len = 10, d_model = 4
+    q_proj = jax.random.normal(rng, (H, d_k, d_model))
+    k_proj = jax.random.normal(rng, (1, d_k, d_model))
+    v_proj = jax.random.normal(rng, (1, d_v, d_model))
+    o_proj = jax.random.normal(rng, (d_model, d_v*H))
+
+    desc = AtnDescriptor(q_proj, k_proj, v_proj, o_proj)
+
+    print("=== Result ===")
+    res = MQA(x, desc)
+    print(res.shape)
+
+    # testing jit compatability
+    MQA_jit = jax.jit(MQA)
+    res_jit = MQA_jit(x, desc)
+
+    print(f"JIT parity: {jnp.allclose(res, res_jit)}")
