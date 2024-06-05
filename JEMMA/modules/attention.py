@@ -49,7 +49,7 @@ def MHA(q: jnp.ndarray, k: jnp.ndarray, v: jnp.ndarray, atn_descriptor: AtnDescr
     return output
 
 
-def MQA(q: jnp.array, atn_descriptor: AtnDescriptor):
+def MQA(q: jnp.array, atn_descriptor: AtnDescriptor, mid_fn=None):
     """
     Multi-query (self) attention (1 head for K and V, multiple heads for Q)
 
@@ -58,6 +58,8 @@ def MQA(q: jnp.array, atn_descriptor: AtnDescriptor):
 
     Args:
         q: (B, T, d_model)
+        atn_descriptor: attention weights
+        mid_fn: intermediate function to transform Q/K/V before attention
     """
     d_k = atn_descriptor.q_proj.shape[-1]
 
@@ -65,7 +67,9 @@ def MQA(q: jnp.array, atn_descriptor: AtnDescriptor):
     # contraction along d_model (m)
     q_p = jnp.einsum('BTm,Hkm->BHTk', q, atn_descriptor.q_proj)
     k_p = jnp.einsum('BTm,Hkm->BHTk', q, atn_descriptor.k_proj)           
-    v_p = jnp.einsum('BTm,Hvm->BHTv', q, atn_descriptor.v_proj)           
+    v_p = jnp.einsum('BTm,Hvm->BHTv', q, atn_descriptor.v_proj)
+
+    q_p, k_p, v_p = mid_fn(q_p, k_p, v_p) if mid_fn is not None else (q_p, k_p, v_p)
 
     # broadcast K to V, recall K has 1 head
     # Q: (B, H, T, d_model), K: (B, 1, T, d_model) -> (B, H, T, T)

@@ -11,15 +11,17 @@ from modules import attention, activations, norm, pos_embedding
 from typing import NamedTuple, Optional
 from functools import partial
 
+from time import time
+
 
 class GemmaDescriptor(NamedTuple):
     """
-    Contains params for GEMMA block
+    Contains state of a GEMMA model
     """
     d_model: int                          # activation space dimension
     n_heads: int                          # num heads in MHA or number of query heads in MQA
     dropout: float                        # p(drop), probably not needed for inference
-    theta: jnp.array                      # minimum rotary angles (d_model / 2,)
+    rope: pos_embedding.RoPEDescriptor    # RoPE angles
     embed: jnp.array                      # embedding matrix (vocab_size, d_model)
     unembed: Optional[jnp.array] = None   # None = shared with embedding
     blocks: list[NamedTuple] = None       # decoder blocks
@@ -33,13 +35,31 @@ class GemmaBlockDescriptor(NamedTuple):
     up_proj: jnp.array
     gate_proj: jnp.array
     down_proj: jnp.array
-    scale: jnp.array
     atn: attention.AtnDescriptor
     prenorm: norm.RMSNormDescriptor
     postnorm: norm.RMSNormDescriptor
 
-GeGLU = partial(activations.GLU, b1=0.0, b2=0.0)
+# ==== gemma specific functions ====
+def scale_q(q, k, v, rd):
+    """
+    *multiply* query by sqrt(d_k) before dot product.
+    NOT divide, multiply.
 
+    deepmind does this for some godforsaken reason
+    """
+    d_k = k.shape[-1]
+    B = q.shape[0]
+    T = q.shape[2]
+    m = jnp.repeat(jnp.arange(T), B).reshape(B, T)
+    q = pos_embedding.apply_rope_batch(q, m, rd)
+    k = pos_embedding.apply_rope_batch(k, m, rd)
+
+    return q * jnp.sqrt(d_k), k, v
+
+
+gemma_GeGLU = partial(activations.GLU, b1=0.0, b2=0.0)
+
+# ==== gemma forward pass ====
 def embed_tokens(tokens: jnp.array, desc: GemmaDescriptor):
     """
     Embeds tokens into activation space and apply positional encoding
@@ -50,7 +70,6 @@ def embed_tokens(tokens: jnp.array, desc: GemmaDescriptor):
     """
 
     x = jnp.take(desc.embed, tokens, axis=0)
-    x = x + pos_embedding.apply_RoPE(desc.theta, x)
     return x
 
 
@@ -68,7 +87,7 @@ def unembed(x: jnp.array, desc: GemmaDescriptor):
     return x @ desc.unembed.T
 
 
-def apply_gemma_block(x: jnp.array, desc: GemmaBlockDescriptor):
+def apply_gemma_block(x: jnp.array, desc: GemmaBlockDescriptor, mid_fn=None):
     """
     GEMMA block
     """
@@ -76,37 +95,168 @@ def apply_gemma_block(x: jnp.array, desc: GemmaBlockDescriptor):
     x = norm.apply_RMSNorm(desc.prenorm, x)
 
     # self attention
-    v = attention.MQA(x, desc.atn)
+    v = attention.MQA(x, desc.atn, mid_fn)
 
     # add to residual stream, apply norm
     x = x + v
     x = norm.apply_RMSNorm(desc.postnorm, x)
 
     # apply MLP (B, T, d_model) -> (B, T, d_g)
-    x = GeGLU(x, desc.gate_proj, desc.up_proj)
+    x = gemma_GeGLU(x, desc.gate_proj, desc.up_proj)
     
     # project back to d_model
     return x @ desc.down_proj.T
 
 
-def gemma_forward(x: jnp.array, desc: GemmaDescriptor):
+def construct_gemma_forward(desc: GemmaDescriptor):
     """
-    One forward pass of GEMMA 
+    create jittable forward pass of GEMMA 
 
     Args:
         x: (B, N) sequence of token ids
         desc: GemmaDescriptor
     """
 
-    x = embed_tokens(x, desc)
+    gemma_scale_q = partial(scale_q, rd=desc.rope)
+    def fwd(x: jnp.array):
+        x = embed_tokens(x, desc)
 
-    # JAX unrolls this loop when jitting
+        # JAX unrolls this loop when jitting
+        for block in desc.blocks:
+            x = apply_gemma_block(x, block, mid_fn=gemma_scale_q)
+
+        return unembed(x, desc)
+
+    return fwd
+
+
+def init_gemma(d_model: int,
+               d_up: int,
+               H_dim: int,
+               n_heads: int, 
+               vocab_size: int, 
+               n_blocks: int, 
+               theta_max: int=10000,
+               atn_type: str="MHA"):
+    """
+    Initialize a GEMMA model
+
+    Args:
+        d_model: activation space dimension
+        d_up: dimension of gate MLP
+        H_dim: number of dimensions in an attention head
+        n_heads: num heads in MHA or number of query heads in MQA
+        vocab_size: size of vocabulary
+        n_blocks: number of GEMMA blocks
+        theta_max: max rotation period for subspaces
+        atn_type: attention type (MHA or MQA)
+    """
+
+    assert d_model % 2 == 0, "embedding dimension must be even"
+
+    embed = jax.random.normal(jax.random.PRNGKey(0), (vocab_size, d_model))
+    rope = pos_embedding.init_RoPE(H_dim, theta_max)
+    rng = jax.random.PRNGKey(0)
+
+    blocks = []
+    for _ in range(n_blocks):
+        # MLP projections
+        up_proj = jax.random.normal(rng, (d_up, d_model)).astype(jnp.bfloat16)
+        gate_proj = jax.random.normal(rng, (d_up, d_model)).astype(jnp.bfloat16)
+        down_proj = jax.random.normal(rng, (d_model, d_up)).astype(jnp.bfloat16)
+
+        # pre and post norm
+        scale1 = jax.random.normal(rng, (d_model,)).astype(jnp.bfloat16)
+        scale2 = jax.random.normal(rng, (d_model,)).astype(jnp.bfloat16)
+
+        # attention and normalization weights
+        if atn_type == "MQA":
+            k_heads = 1
+            v_heads = 1
+        else:
+            k_heads = n_heads
+            v_heads = n_heads
+
+        q_proj = jax.random.normal(rng, (n_heads, H_dim, d_model)).astype(jnp.bfloat16)
+        k_proj = jax.random.normal(rng, (k_heads, H_dim, d_model)).astype(jnp.bfloat16)
+        v_proj = jax.random.normal(rng, (v_heads, H_dim, d_model)).astype(jnp.bfloat16)
+        o_proj = jax.random.normal(rng, (d_model, n_heads*H_dim)).astype(jnp.bfloat16)
+
+        atn = attention.AtnDescriptor(q_proj, k_proj, v_proj, o_proj)
+        norm1 = norm.RMSNormDescriptor(scale1)
+        norm2 = norm.RMSNormDescriptor(scale2)
+
+        blocks.append(
+            GemmaBlockDescriptor(
+                up_proj=up_proj,
+                gate_proj=gate_proj,
+                down_proj=down_proj,
+                atn=atn,
+                prenorm=norm1,
+                postnorm=norm2
+            )
+        )
+
+
+    return GemmaDescriptor(
+        d_model=d_model,
+        n_heads=n_heads,
+        dropout=0.1,
+        rope=rope,
+        embed=embed,
+        blocks=blocks
+    )
+
+
+def count_params(desc: GemmaDescriptor):
+    """
+    Count number of parameters in GEMMA model
+    """
+    n_params = desc.embed.size
     for block in desc.blocks:
-        x = apply_gemma_block(x, block)
+        n_params += block.up_proj.size
+        n_params += block.gate_proj.size
+        n_params += block.down_proj.size
+        n_params += block.atn.q_proj.size
+        n_params += block.atn.k_proj.size
+        n_params += block.atn.v_proj.size
+        n_params += block.atn.o_proj.size
+        n_params += block.prenorm.scale.size
+        n_params += block.postnorm.scale.size
 
-    return unembed(x, desc)
+    return n_params
 
 
 if __name__ == "__main__":
     # test
-    pass
+    d_model = 2048
+    d_up = 4096 
+    H_dim = 512
+    n_heads = 4
+    vocab_size = 100
+    n_blocks = 2
+
+    gem = init_gemma(d_model, d_up, H_dim, n_heads, vocab_size, n_blocks)
+
+    print(f"Created model with {count_params(gem)} params")
+
+    # dummy batch of 1 sequence of 3 tokens
+    x = jnp.array([[1, 2, 3],])
+
+    print("Compiling forward pass")
+    start = time()
+    gemma_forward = jax.jit(construct_gemma_forward(gem))
+    print("Compiled in ", time() - start, "seconds")
+
+    print("timing forward pass on 10 runs")
+    t_delta_sum = 0
+    for i in range(10):
+        start = time()
+        c = gemma_forward(x).block_until_ready()
+        t_delta_sum += time() - start
+    
+    delta_avg = t_delta_sum / 10
+    print("Average time: ", delta_avg, "seconds")
+    
+    # this probably sucks because no KV cache
+    print("Tokens/second: ", 1 / delta_avg)

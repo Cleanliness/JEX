@@ -7,7 +7,7 @@ class RMSNormDescriptor(NamedTuple):
     """
     Contains params for RMS layer normalization
     """
-    scale: jnp.ndarray
+    scale: jnp.ndarray      # (d_model,)
 
 
 def apply_RMSNorm(RMSDesc: RMSNormDescriptor, x: jnp.ndarray):
@@ -16,7 +16,7 @@ def apply_RMSNorm(RMSDesc: RMSNormDescriptor, x: jnp.ndarray):
 
     Args:
         RMSDesc: RMS norm params
-        x: (seq_len, d_model)
+        x: (B, seq_len, d_model)
     """
     return x / jnp.sqrt(jnp.mean(x*x, axis=-1, keepdims=True) + 1e-6) * RMSDesc.scale
 
