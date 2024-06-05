@@ -228,37 +228,41 @@ def count_params(desc: GemmaDescriptor):
 
 
 if __name__ == "__main__":
-    # test
+    # model params 
     d_model = 2048
     d_up = 4096 
     H_dim = 512
     n_heads = 4
     vocab_size = 100
-    n_blocks = 2
+    n_blocks = 4
+
+    # test params
+    runs = 1000
 
     gem = init_gemma(d_model, d_up, H_dim, n_heads, vocab_size, n_blocks)
 
     print(f"Created model with {count_params(gem)} params")
-
     # dummy batch of 1 sequence of 3 tokens
     x = jnp.array([[1, 2, 3],])
 
     print("Compiling forward pass")
     start = time()
     gemma_forward = jax.jit(construct_gemma_forward(gem))
-    c = gemma_forward(x).block_until_ready() # warmup
+    c = gemma_forward(x).block_until_ready()    # warmup, JAX is lazy
     print("Compiled in ", time() - start, "seconds")
 
-    print("timing forward pass on 10 runs")
+    print(f"timing forward pass on {runs} runs")
     t_delta_sum = 0
 
-    for i in range(10):
+    for i in range(runs):
         start = time()
         c = gemma_forward(x).block_until_ready()
         t_delta_sum += time() - start
+        x += 1
     
-    delta_avg = t_delta_sum / 10
+    delta_avg = t_delta_sum / runs
     print("Average time: ", delta_avg, "seconds")
     
     # this probably sucks because no KV cache
     print("Tokens/second: ", 1 / delta_avg)
+

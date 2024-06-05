@@ -14,14 +14,3 @@ def ker(x_ref, y_ref, o_ref):
 #                         )(x, y)
 
 # print(add_vec(jnp.ones(65), jnp.ones(65)*2))
-
-def weave(x):
-  odd = x.at[1::2].get()
-  even = -x.at[::2].get()
-  interleaved = 
-  
-
-
-x = jnp.arange(9)
-
-print(weave(x))

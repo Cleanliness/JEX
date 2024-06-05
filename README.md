@@ -1,12 +1,13 @@
-# JEMMA
+# JEX
 JAX-based LLM inference
 
 # TODO
 gemma 2B
 - [x] Layernorm
 - [ ] Dropout
-- [ ] Causal multi-head attention
-     - [ ] Multi-query attention 
+- [x] Multi-query attention 
+- [x] Multi-head attention
+- [ ] Causal attention
 - [x] Positional embedding
 - [x] Tokenizer
 - [ ] KV Cache
@@ -14,4 +15,3 @@ gemma 2B
 Later
 - [ ] FlashAttention (CUDA and Triton kernels)
 - [ ] Weight Quantization
-- [ ] OpenAI-compatible API
