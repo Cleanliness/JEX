@@ -246,10 +246,12 @@ if __name__ == "__main__":
     print("Compiling forward pass")
     start = time()
     gemma_forward = jax.jit(construct_gemma_forward(gem))
+    c = gemma_forward(x).block_until_ready() # warmup
     print("Compiled in ", time() - start, "seconds")
 
     print("timing forward pass on 10 runs")
     t_delta_sum = 0
+
     for i in range(10):
         start = time()
         c = gemma_forward(x).block_until_ready()
