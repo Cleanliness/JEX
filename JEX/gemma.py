@@ -118,6 +118,7 @@ def construct_gemma_forward(desc: GemmaDescriptor):
     """
 
     gemma_scale_q = partial(scale_q, rd=desc.rope)
+    block_fn = partial(apply_gemma_block, mid_fn=gemma_scale_q)
     def fwd(x: jnp.array):
         x = embed_tokens(x, desc)
 
@@ -125,6 +126,8 @@ def construct_gemma_forward(desc: GemmaDescriptor):
         for block in desc.blocks:
             x = apply_gemma_block(x, block, mid_fn=gemma_scale_q)
 
+        # do with scan instead
+        # x = jax.lax.scan(block_fn, x, desc.blocks)
         return unembed(x, desc)
 
     return fwd
@@ -154,7 +157,7 @@ def init_gemma(d_model: int,
 
     assert d_model % 2 == 0, "embedding dimension must be even"
 
-    embed = jax.random.normal(jax.random.PRNGKey(0), (vocab_size, d_model))
+    embed = jax.random.normal(jax.random.PRNGKey(0), (vocab_size, d_model)).astype(jnp.bfloat16)
     rope = pos_embedding.init_RoPE(H_dim, theta_max)
     rng = jax.random.PRNGKey(0)
 
@@ -233,8 +236,8 @@ if __name__ == "__main__":
     d_up = 4096 
     H_dim = 512
     n_heads = 4
-    vocab_size = 100
-    n_blocks = 4
+    vocab_size = 100000
+    n_blocks = 8
 
     # test params
     runs = 1000
@@ -244,10 +247,11 @@ if __name__ == "__main__":
     print(f"Created model with {count_params(gem)} params")
     # dummy batch of 1 sequence of 3 tokens
     x = jnp.array([[1, 2, 3],])
+    fwd = construct_gemma_forward(gem)
 
     print("Compiling forward pass")
     start = time()
-    gemma_forward = jax.jit(construct_gemma_forward(gem))
+    gemma_forward = jax.jit(fwd)
     c = gemma_forward(x).block_until_ready()    # warmup, JAX is lazy
     print("Compiled in ", time() - start, "seconds")
 

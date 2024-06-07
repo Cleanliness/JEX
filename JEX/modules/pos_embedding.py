@@ -15,7 +15,6 @@ class RoPEDescriptor(NamedTuple):
     Assumes an even number of dimensions
     """
     theta: Optional[jnp.array]   # minimum rotary angles (H_q / 2,)
-    theta_max: int               # max rotation period for subspaces (see paper)
 
 
 def init_RoPE(d: int, theta_max: int=10000):
@@ -31,7 +30,7 @@ def init_RoPE(d: int, theta_max: int=10000):
     theta_in = 2*jnp.arange(0, d//2) / d
     theta = theta_max**theta_in
 
-    return RoPEDescriptor(theta, theta_max)
+    return RoPEDescriptor(theta)
 
 
 def apply_RoPE(x: jnp.ndarray, m: jnp.ndarray, rotary_descriptor: RoPEDescriptor):
