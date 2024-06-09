@@ -17,7 +17,7 @@ To beat:
 - vLLM: TODO
 
 History:
-- v0: 56.8865 tokens/second
+- v0: 59.8865 tokens/second
 
 # TODO
 gemma 2B

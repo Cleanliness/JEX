@@ -22,7 +22,6 @@ class GemmaDescriptor(NamedTuple):
     """
     d_model: int                          # activation space dimension
     n_heads: int                          # num heads in MHA or number of query heads in MQA
-    dropout: float                        # p(drop), probably not needed for inference
     rope: pos_embedding.RoPEDescriptor    # RoPE angles
     embed: jnp.array                      # embedding matrix (vocab_size, d_model)
     final_norm: norm.RMSNormDescriptor    # Final layer normalization
@@ -116,8 +115,7 @@ def construct_gemma_forward(desc: GemmaDescriptor):
         
         x = norm.apply_RMSNorm(gdesc.final_norm, x)
 
-        # do with scan instead
-        # x = jax.lax.scan(block_fn, x, desc.blocks)
+        # lax.scan is slower
         return x @ gdesc.embed.T
 
     return fwd
@@ -195,7 +193,6 @@ def init_gemma(d_model: int,
     return GemmaDescriptor(
         d_model=d_model,
         n_heads=n_heads,
-        dropout=0.1,
         rope=rope,
         embed=embed,
         final_norm=final_norm,
@@ -243,8 +240,6 @@ if __name__ == "__main__":
     fwd = jax.checkpoint(construct_gemma_forward(gem))
 
     # NOTE: jit compilation takes up a lot of cpu memory
-    # debug
-
     print("Compiling forward pass")
     start = time()
     gemma_forward = jax.jit(fwd)
