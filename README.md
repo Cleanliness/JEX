@@ -22,7 +22,6 @@ History:
 # TODO
 gemma 2B
 - [x] Layernorm
-- [ ] Dropout
 - [x] Multi-query attention 
 - [x] Multi-head attention
 - [ ] Causal attention
