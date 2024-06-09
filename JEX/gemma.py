@@ -1,3 +1,4 @@
+# for ver
 # 2.5 billion parameter model for now
 # bf16 weights, so min 5GB in VRAM
 # TODO: profile memory usage
@@ -6,6 +7,7 @@
 # ^google's implementation in flax
 
 import jax
+import jax.ad_checkpoint
 import jax.numpy as jnp
 from modules import attention, activations, norm, pos_embedding
 from typing import NamedTuple, Optional
@@ -60,7 +62,7 @@ def scale_q(q, k, v, rd):
 gemma_GeGLU = partial(activations.GLU, b1=0.0, b2=0.0)
 
 # ==== gemma forward pass ====
-def embed_tokens(tokens: jnp.array, desc: GemmaDescriptor):
+def embed_tokens(tokens: jnp.array, emb: jnp.array):
     """
     Embeds tokens into activation space and apply positional encoding
 
@@ -69,22 +71,8 @@ def embed_tokens(tokens: jnp.array, desc: GemmaDescriptor):
         desc: GemmaDescriptor
     """
 
-    x = jnp.take(desc.embed, tokens, axis=0)
+    x = jnp.take(emb, tokens, axis=0)
     return x
-
-
-def unembed(x: jnp.array, desc: GemmaDescriptor):
-    """
-    convert from activation space to logits
-
-    Args:
-        x: (B, N, d_model)
-        desc: GemmaDescriptor
-    """
-
-    if desc.unembed is None:
-        return x @ desc.embed.T
-    return x @ desc.unembed.T
 
 
 def apply_gemma_block(x: jnp.array, desc: GemmaBlockDescriptor, mid_fn=None):
@@ -118,17 +106,16 @@ def construct_gemma_forward(desc: GemmaDescriptor):
     """
 
     gemma_scale_q = partial(scale_q, rd=desc.rope)
-    block_fn = partial(apply_gemma_block, mid_fn=gemma_scale_q)
-    def fwd(x: jnp.array):
-        x = embed_tokens(x, desc)
+    def fwd(x: jnp.array, gdesc: GemmaDescriptor):
+        x = embed_tokens(x, gdesc.embed)
 
         # JAX unrolls this loop when jitting
-        for block in desc.blocks:
+        for block in gdesc.blocks:
             x = apply_gemma_block(x, block, mid_fn=gemma_scale_q)
 
         # do with scan instead
         # x = jax.lax.scan(block_fn, x, desc.blocks)
-        return unembed(x, desc)
+        return x @ gdesc.embed.T
 
     return fwd
 
@@ -236,8 +223,8 @@ if __name__ == "__main__":
     d_up = 4096 
     H_dim = 512
     n_heads = 4
-    vocab_size = 100000
-    n_blocks = 8
+    vocab_size = 256000     # don't go past this
+    n_blocks = 17
 
     # test params
     runs = 1000
@@ -247,12 +234,15 @@ if __name__ == "__main__":
     print(f"Created model with {count_params(gem)} params")
     # dummy batch of 1 sequence of 3 tokens
     x = jnp.array([[1, 2, 3],])
-    fwd = construct_gemma_forward(gem)
+    fwd = jax.checkpoint(construct_gemma_forward(gem))
+
+    # NOTE: jit compilation takes up a lot of cpu memory
+    # debug
 
     print("Compiling forward pass")
     start = time()
     gemma_forward = jax.jit(fwd)
-    c = gemma_forward(x).block_until_ready()    # warmup, JAX is lazy
+    c = gemma_forward(x, gem).block_until_ready()    # warmup, JAX is lazy
     print("Compiled in ", time() - start, "seconds")
 
     print(f"timing forward pass on {runs} runs")
@@ -260,7 +250,7 @@ if __name__ == "__main__":
 
     for i in range(runs):
         start = time()
-        c = gemma_forward(x).block_until_ready()
+        c = gemma_forward(x, gem).block_until_ready()
         t_delta_sum += time() - start
         x += 1
     
