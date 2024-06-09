@@ -25,6 +25,7 @@ class GemmaDescriptor(NamedTuple):
     dropout: float                        # p(drop), probably not needed for inference
     rope: pos_embedding.RoPEDescriptor    # RoPE angles
     embed: jnp.array                      # embedding matrix (vocab_size, d_model)
+    final_norm: norm.RMSNormDescriptor    # Final layer normalization
     unembed: Optional[jnp.array] = None   # None = shared with embedding
     blocks: list[NamedTuple] = None       # decoder blocks
     kv_cache: Optional[jnp.array] = None  # TODO: key-value cache for MQA
@@ -112,6 +113,8 @@ def construct_gemma_forward(desc: GemmaDescriptor):
         # JAX unrolls this loop when jitting
         for block in gdesc.blocks:
             x = apply_gemma_block(x, block, mid_fn=gemma_scale_q)
+        
+        x = norm.apply_RMSNorm(gdesc.final_norm, x)
 
         # do with scan instead
         # x = jax.lax.scan(block_fn, x, desc.blocks)
@@ -127,7 +130,7 @@ def init_gemma(d_model: int,
                vocab_size: int, 
                n_blocks: int, 
                theta_max: int=10000,
-               atn_type: str="MHA"):
+               atn_type: str="MQA"):
     """
     Initialize a GEMMA model
 
@@ -187,6 +190,7 @@ def init_gemma(d_model: int,
             )
         )
 
+    final_norm = norm.RMSNormDescriptor(jax.random.normal(rng, (d_model,)).astype(jnp.bfloat16))
 
     return GemmaDescriptor(
         d_model=d_model,
@@ -194,7 +198,8 @@ def init_gemma(d_model: int,
         dropout=0.1,
         rope=rope,
         embed=embed,
-        blocks=blocks
+        final_norm=final_norm,
+        blocks=blocks,
     )
 
 
@@ -202,7 +207,8 @@ def count_params(desc: GemmaDescriptor):
     """
     Count number of parameters in GEMMA model
     """
-    n_params = desc.embed.size
+    embed_params = desc.embed.size
+    n_params = desc.final_norm.scale.size
     for block in desc.blocks:
         n_params += block.up_proj.size
         n_params += block.gate_proj.size
@@ -214,17 +220,17 @@ def count_params(desc: GemmaDescriptor):
         n_params += block.prenorm.scale.size
         n_params += block.postnorm.scale.size
 
-    return n_params
+    return n_params, embed_params
 
 
 if __name__ == "__main__":
     # model params 
     d_model = 2048
-    d_up = 4096 
-    H_dim = 512
-    n_heads = 4
-    vocab_size = 256000     # don't go past this
-    n_blocks = 17
+    n_blocks = 18
+    d_up = 16384
+    H_dim = 256
+    n_heads = 8
+    vocab_size = 256128     # don't go past this
 
     # test params
     runs = 1000

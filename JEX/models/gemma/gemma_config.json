@@ -36,7 +36,7 @@
     ]
   },
   "model.layers.0.mlp.gate_proj.weight": {
-    "dtype\r\n": "BF16",
+    "dtype": "BF16",
     "shape": [
       16384,
       2048
@@ -155,7 +155,7 @@
       1470115840
     ]
   },
-  "model.layers.1.post_attenti\r\non_layernorm.weight": {
+  "model.layers.1.post_attention_layernorm.weight": {
     "dtype": "BF16",
     "shape": [
       2048
@@ -166,7 +166,7 @@
     ]
   },
   "model.layers.1.self_attn.k_proj.weight": {
-    "dtyp\r\ne": "BF16",
+    "dtype": "BF16",
     "shape": [
       256,
       2048
@@ -219,7 +219,7 @@
       1488998400
     ]
   },
-  "model.layers.10.mlp.down\r\n_proj.weight": {
+  "model.layers.10.mlp.down_proj.weight": {
     "dtype": "BF16",
     "shape": [
       2048,
@@ -285,7 +285,7 @@
       1699766272
     ]
   },
-  "model.layers.10.s\r\nelf_attn.q_proj.weight": {
+  "model.layers.10.self_attn.q_proj.weight": {
     "dtype": "BF16",
     "shape": [
       2048,
@@ -296,7 +296,7 @@
       1708154880
     ]
   },
-  "model.layers.10.self_attn.v_proj.weigh\r\nt": {
+  "model.layers.10.self_attn.v_proj.weight": {
     "dtype": "BF16",
     "shape": [
       256,
@@ -309,7 +309,7 @@
   },
   "model.layers.11.input_layernorm.weight": {
     "dtype": "BF16",
-    "sha\r\npe": [
+    "shape": [
       2048
     ],
     "data_offsets": [
@@ -323,7 +323,7 @@
       2048,
       16384
     ],
-    "data_offset\r\ns": [
+    "data_offsets": [
       1709207552,
       1776316416
     ]
@@ -351,7 +351,7 @@
       1910534144
     ]
   },
-  "model.layers.11.pos\r\nt_attention_layernorm.weight": {
+  "model.layers.11.post_attention_layernorm.weight": {
     "dtype": "BF16",
     "shape": [
       2048
@@ -361,7 +361,7 @@
       1910538240
     ]
   },
-  "model.layers.11.self_attn.k_proj.weig\r\nht": {
+  "model.layers.11.self_attn.k_proj.weight": {
     "dtype": "BF16",
     "shape": [
       256,
@@ -374,7 +374,7 @@
   },
   "model.layers.11.self_attn.o_proj.weight": {
     "dtype": "BF16",
-    "s\r\nhape": [
+    "shape": [
       2048,
       2048
     ],
@@ -389,7 +389,7 @@
       2048,
       2048
     ],
-    "da\r\nta_offsets": [
+    "data_offsets": [
       1919975424,
       1928364032
     ]
@@ -416,7 +416,7 @@
       1929416704
     ]
   },
-  "model.layer\r\ns.12.mlp.down_proj.weight": {
+  "model.layers.12.mlp.down_proj.weight": {
     "dtype": "BF16",
     "shape": [
       2048,
@@ -427,7 +427,7 @@
       1996525568
     ]
   },
-  "model.layers.12.mlp.gate_proj.weig\r\nht": {
+  "model.layers.12.mlp.gate_proj.weight": {
     "dtype": "BF16",
     "shape": [
       16384,
@@ -440,7 +440,7 @@
   },
   "model.layers.12.mlp.up_proj.weight": {
     "dtype": "BF16",
-    "shap\r\ne": [
+    "shape": [
       16384,
       2048
     ],
@@ -454,7 +454,7 @@
     "shape": [
       2048
     ],
-    "d\r\nata_offsets": [
+    "data_offsets": [
       2130743296,
       2130747392
     ]
@@ -493,7 +493,7 @@
       2148573184
     ]
   },
-  "model.layers.12.self_attn\r\n.v_proj.weight": {
+  "model.layers.12.self_attn.v_proj.weight": {
     "dtype": "BF16",
     "shape": [
       256,
@@ -505,7 +505,7 @@
     ]
   },
   "model.layers.13.input_layernorm.weight": {
-    "dtype\r\n": "BF16",
+    "dtype": "BF16",
     "shape": [
       2048
     ],
@@ -548,7 +548,7 @@
       2350952448
     ]
   },
-  "model.\r\nlayers.13.post_attention_layernorm.weight": {
+  "model.layers.13.post_attention_layernorm.weight": {
     "dtype": "BF16",
     "shape": [
       2048
@@ -558,7 +558,7 @@
       2350956544
     ]
   },
-  "model.layers.13.self_att\r\nn.k_proj.weight": {
+  "model.layers.13.self_attn.k_proj.weight": {
     "dtype": "BF16",
     "shape": [
       256,
@@ -570,7 +570,7 @@
     ]
   },
   "model.layers.13.self_attn.o_proj.weight": {
-    "dty\r\npe": "BF16",
+    "dtype": "BF16",
     "shape": [
       2048,
       2048
@@ -598,7 +598,7 @@
       256,
       2048
     ],
-    "data_offset\r\ns": [
+    "data_offsets": [
       2368782336,
       2369830912
     ]
@@ -624,7 +624,7 @@
       2436943872
     ]
   },
-  "model.layers.14.mlp.g\r\nate_proj.weight": {
+  "model.layers.14.mlp.gate_proj.weight": {
     "dtype": "BF16",
     "shape": [
       16384,
@@ -648,7 +648,7 @@
   },
   "model.layers.14.post_attention_layernorm.weight": {
     "dtype": "BF16",
-    "sha\r\npe": [
+    "shape": [
       2048
     ],
     "data_offsets": [
@@ -662,7 +662,7 @@
       256,
       2048
     ],
-    "data_offse\r\nts": [
+    "data_offsets": [
       2571165696,
       2572214272
     ]
@@ -690,7 +690,7 @@
       2588991488
     ]
   },
-  "model.layers\r\n.14.self_attn.v_proj.weight": {
+  "model.layers.14.self_attn.v_proj.weight": {
     "dtype": "BF16",
     "shape": [
       256,
@@ -701,7 +701,7 @@
       2590040064
     ]
   },
-  "model.layers.15.input_layernorm.we\r\night": {
+  "model.layers.15.input_layernorm.weight": {
     "dtype": "BF16",
     "shape": [
       2048
@@ -728,7 +728,7 @@
       16384,
       2048
     ],
-    "data_off\r\nsets": [
+    "data_offsets": [
       2657153024,
       2724261888
     ]
@@ -755,7 +755,7 @@
       2791374848
     ]
   },
-  "model.layer\r\ns.15.self_attn.k_proj.weight": {
+  "model.layers.15.self_attn.k_proj.weight": {
     "dtype": "BF16",
     "shape": [
       256,
@@ -766,7 +766,7 @@
       2792423424
     ]
   },
-  "model.layers.15.self_attn.o_proj.\r\nweight": {
+  "model.layers.15.self_attn.o_proj.weight": {
     "dtype": "BF16",
     "shape": [
       2048,
@@ -778,7 +778,7 @@
     ]
   },
   "model.layers.15.self_attn.q_proj.weight": {
-    "dtype": "BF1\r\n6",
+    "dtype": "BF16",
     "shape": [
       2048,
       2048
@@ -820,7 +820,7 @@
       2877362176
     ]
   },
-  "model.la\r\nyers.16.mlp.gate_proj.weight": {
+  "model.layers.16.mlp.gate_proj.weight": {
     "dtype": "BF16",
     "shape": [
       16384,
@@ -831,7 +831,7 @@
       2944471040
     ]
   },
-  "model.layers.16.mlp.up_proj.wei\r\nght": {
+  "model.layers.16.mlp.up_proj.weight": {
     "dtype": "BF16",
     "shape": [
       16384,
@@ -843,7 +843,7 @@
     ]
   },
   "model.layers.16.post_attention_layernorm.weight": {
-    "dtype\r\n": "BF16",
+    "dtype": "BF16",
     "shape": [
       2048
     ],
@@ -897,7 +897,7 @@
       3030458368
     ]
   },
-  "model.layers.17.mlp.g\r\nate_proj.weight": {
+  "model.layers.17.mlp.gate_proj.weight": {
     "dtype": "BF16",
     "shape": [
       16384,
@@ -975,7 +975,7 @@
     ]
   },
   "model.layers.2.mlp.down_proj.weight": {
-    "dtype\r\n": "BF16",
+    "dtype": "BF16",
     "shape": [
       2048,
       16384
@@ -1029,7 +1029,7 @@
       3385933824
     ]
   },
-  "model.layers.2.self_a\r\nttn.o_proj.weight": {
+  "model.layers.2.self_attn.o_proj.weight": {
     "dtype": "BF16",
     "shape": [
       2048,
@@ -1041,7 +1041,7 @@
     ]
   },
   "model.layers.2.self_attn.q_proj.weight": {
-    "d\r\ntype": "BF16",
+    "dtype": "BF16",
     "shape": [
       2048,
       2048
@@ -1084,7 +1084,7 @@
       3470872576
     ]
   },
-  "m\r\nodel.layers.3.mlp.gate_proj.weight": {
+  "model.layers.3.mlp.gate_proj.weight": {
     "dtype": "BF16",
     "shape": [
       16384,
@@ -1095,7 +1095,7 @@
       3537981440
     ]
   },
-  "model.layers.3.mlp.up_pro\r\nj.weight": {
+  "model.layers.3.mlp.up_proj.weight": {
     "dtype": "BF16",
     "shape": [
       16384,
@@ -1107,7 +1107,7 @@
     ]
   },
   "model.layers.3.post_attention_layernorm.weight": {
-    "d\r\ntype": "BF16",
+    "dtype": "BF16",
     "shape": [
       2048
     ],
@@ -1162,7 +1162,7 @@
       3623968768
     ]
   },
-  "model.layers.4.input_\r\nlayernorm.weight": {
+  "model.layers.4.input_layernorm.weight": {
     "dtype": "BF16",
     "shape": [
       2048
@@ -1173,7 +1173,7 @@
     ]
   },
   "model.layers.4.mlp.down_proj.weight": {
-    "dtype": "BF\r\n16",
+    "dtype": "BF16",
     "shape": [
       2048,
       16384
@@ -1216,7 +1216,7 @@
       3825303552
     ]
   },
-  "mod\r\nel.layers.4.self_attn.k_proj.weight": {
+  "model.layers.4.self_attn.k_proj.weight": {
     "dtype": "BF16",
     "shape": [
       256,
@@ -1227,7 +1227,7 @@
       3826352128
     ]
   },
-  "model.layers.4.self_attn.o\r\n_proj.weight": {
+  "model.layers.4.self_attn.o_proj.weight": {
     "dtype": "BF16",
     "shape": [
       2048,
@@ -1283,7 +1283,7 @@
       3911290880
     ]
   },
-  "model.\r\nlayers.5.mlp.gate_proj.weight": {
+  "model.layers.5.mlp.gate_proj.weight": {
     "dtype": "BF16",
     "shape": [
       16384,
@@ -1294,7 +1294,7 @@
       3978399744
     ]
   },
-  "model.layers.5.mlp.up_proj.wei\r\nght": {
+  "model.layers.5.mlp.up_proj.weight": {
     "dtype": "BF16",
     "shape": [
       16384,
@@ -1349,7 +1349,7 @@
       4063338496
     ]
   },
-  "mod\r\nel.layers.5.self_attn.v_proj.weight": {
+  "model.layers.5.self_attn.v_proj.weight": {
     "dtype": "BF16",
     "shape": [
       256,
@@ -1360,7 +1360,7 @@
       4064387072
     ]
   },
-  "model.layers.6.input_layer\r\nnorm.weight": {
+  "model.layers.6.input_layernorm.weight": {
     "dtype": "BF16",
     "shape": [
       2048
@@ -1372,7 +1372,7 @@
   },
   "model.layers.6.mlp.down_proj.weight": {
     "dtype": "BF16",
-    "\r\nshape": [
+    "shape": [
       2048,
       16384
     ],
@@ -1387,7 +1387,7 @@
       16384,
       2048
     ],
-    "dat\r\na_offsets": [
+    "data_offsets": [
       4131500032,
       4198608896
     ]
@@ -1414,7 +1414,7 @@
       4265721856
     ]
   },
-  "model.la\r\nyers.6.self_attn.k_proj.weight": {
+  "model.layers.6.self_attn.k_proj.weight": {
     "dtype": "BF16",
     "shape": [
       256,
@@ -1425,7 +1425,7 @@
       4266770432
     ]
   },
-  "model.layers.6.self_attn.o_proj\r\n.weight": {
+  "model.layers.6.self_attn.o_proj.weight": {
     "dtype": "BF16",
     "shape": [
       2048,
@@ -1437,7 +1437,7 @@
     ]
   },
   "model.layers.6.self_attn.q_proj.weight": {
-    "dtype": "BF1\r\n6",
+    "dtype": "BF16",
     "shape": [
       2048,
       2048
@@ -1480,7 +1480,7 @@
       4351709184
     ]
   },
-  "model.layer\r\ns.7.mlp.gate_proj.weight": {
+  "model.layers.7.mlp.gate_proj.weight": {
     "dtype": "BF16",
     "shape": [
       16384,
@@ -1503,7 +1503,7 @@
     ]
   },
   "model.layers.7.post_attention_layernorm.weight": {
-    "dtype": "BF1\r\n6",
+    "dtype": "BF16",
     "shape": [
       2048
     ],
@@ -1518,7 +1518,7 @@
       256,
       2048
     ],
-    "data\r\n_offsets": [
+    "data_offsets": [
       4485931008,
       4486979584
     ]
@@ -1545,7 +1545,7 @@
       4503756800
     ]
   },
-  "model.la\r\nyers.7.self_attn.v_proj.weight": {
+  "model.layers.7.self_attn.v_proj.weight": {
     "dtype": "BF16",
     "shape": [
       256,
@@ -1556,7 +1556,7 @@
       4504805376
     ]
   },
-  "model.layers.8.input_layernorm.\r\nweight": {
+  "model.layers.8.input_layernorm.weight": {
     "dtype": "BF16",
     "shape": [
       2048
@@ -1568,7 +1568,7 @@
   },
   "model.layers.8.mlp.down_proj.weight": {
     "dtype": "BF16",
-    "shape\r\n": [
+    "shape": [
       2048,
       16384
     ],
@@ -1583,7 +1583,7 @@
       16384,
       2048
     ],
-    "data_off\r\nsets": [
+    "data_offsets": [
       4571918336,
       4639027200
     ]
@@ -1610,7 +1610,7 @@
       4706140160
     ]
   },
-  "model.layers.\r\n8.self_attn.k_proj.weight": {
+  "model.layers.8.self_attn.k_proj.weight": {
     "dtype": "BF16",
     "shape": [
       256,
@@ -1621,7 +1621,7 @@
       4707188736
     ]
   },
-  "model.layers.8.self_attn.o_proj.weig\r\nht": {
+  "model.layers.8.self_attn.o_proj.weight": {
     "dtype": "BF16",
     "shape": [
       2048,
@@ -1634,7 +1634,7 @@
   },
   "model.layers.8.self_attn.q_proj.weight": {
     "dtype": "BF16",
-    "s\r\nhape": [
+    "shape": [
       2048,
       2048
     ],
@@ -1649,7 +1649,7 @@
       256,
       2048
     ],
-    "data\r\n_offsets": [
+    "data_offsets": [
       4723965952,
       4725014528
     ]
@@ -1676,7 +1676,7 @@
       4792127488
     ]
   },
-  "model.layers.9.m\r\nlp.gate_proj.weight": {
+  "model.layers.9.mlp.gate_proj.weight": {
     "dtype": "BF16",
     "shape": [
       16384,
@@ -1688,7 +1688,7 @@
     ]
   },
   "model.layers.9.mlp.up_proj.weight": {
-    "dty\r\npe": "BF16",
+    "dtype": "BF16",
     "shape": [
       16384,
       2048
@@ -1700,7 +1700,7 @@
   },
   "model.layers.9.post_attention_layernorm.weight": {
     "dtype": "BF16",
-    "s\r\nhape": [
+    "shape": [
       2048
     ],
     "data_offsets": [
@@ -1714,7 +1714,7 @@
       256,
       2048
     ],
-    "data_offs\r\nets": [
+    "data_offsets": [
       4926349312,
       4927397888
     ]
@@ -1742,7 +1742,7 @@
       4944175104
     ]
   },
-  "model.layers.\r\n9.self_attn.v_proj.weight": {
+  "model.layers.9.self_attn.v_proj.weight": {
     "dtype": "BF16",
     "shape": [
       256,
