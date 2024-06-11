@@ -1,4 +1,3 @@
-# for ver
 # 2.5 billion parameter model for now
 # bf16 weights, so min 5GB in VRAM
 # TODO: profile memory usage
@@ -14,6 +13,9 @@ from typing import NamedTuple, Optional
 from functools import partial
 
 from time import time
+from read_model import load_model 
+from tokenizer import load_tokenizer, encode_str, decode_tk
+from modules.pos_embedding import init_RoPE
 
 
 class GemmaDescriptor(NamedTuple):
@@ -41,25 +43,17 @@ class GemmaBlockDescriptor(NamedTuple):
     prenorm: norm.RMSNormDescriptor
     postnorm: norm.RMSNormDescriptor
 
-# ==== gemma specific functions ====
-def scale_q(q, k, v, rd):
-    """
-    *multiply* query by sqrt(d_k) before dot product.
-    NOT divide, multiply.
 
-    deepmind does this for some godforsaken reason
+# ==== gemma specific functions ====
+gemma_GeGLU = partial(activations.GLU, b1=0.0, b2=0.0)
+def qk_rope(q, k, v, rd):
     """
-    d_k = k.shape[-1]
+    Apply rope to queries and keys
+    """
     B = q.shape[0]
     T = q.shape[2]
-    m = jnp.repeat(jnp.arange(T), B).reshape(B, T)
-    q = pos_embedding.apply_rope_batch(q, m, rd)
-    k = pos_embedding.apply_rope_batch(k, m, rd)
-
-    return q * jnp.sqrt(d_k), k, v
-
-
-gemma_GeGLU = partial(activations.GLU, b1=0.0, b2=0.0)
+    m = jnp.tile(jnp.arange(T), B).reshape(B, T)
+    return pos_embedding.apply_rope_batch(q, m, rd), pos_embedding.apply_rope_batch(k, m, rd), v
 
 # ==== gemma forward pass ====
 def embed_tokens(tokens: jnp.array, emb: jnp.array):
@@ -83,7 +77,7 @@ def apply_gemma_block(x: jnp.array, desc: GemmaBlockDescriptor, mid_fn=None):
     x = norm.apply_RMSNorm(desc.prenorm, x)
 
     # self attention
-    v = attention.MQA(x, desc.atn, mid_fn)
+    v = attention.MQA(x, desc.atn, mid_fn=mid_fn)
 
     # add to residual stream, apply norm
     x = x + v
@@ -105,18 +99,20 @@ def construct_gemma_forward(desc: GemmaDescriptor):
         desc: GemmaDescriptor
     """
 
-    gemma_scale_q = partial(scale_q, rd=desc.rope)
+    qk_rope_fn = partial(qk_rope, rd=desc.rope)
     def fwd(x: jnp.array, gdesc: GemmaDescriptor):
-        x = embed_tokens(x, gdesc.embed)
+        # deepmind multiplies by sqrt(d_model) for some reason
+        x = embed_tokens(x, gdesc.embed)*jnp.sqrt(gdesc.d_model).astype(jnp.bfloat16)
 
         # JAX unrolls this loop when jitting
+        # lax.scan is slower
         for block in gdesc.blocks:
-            x = apply_gemma_block(x, block, mid_fn=gemma_scale_q)
+            x = apply_gemma_block(x, block, mid_fn=qk_rope_fn)
         
         x = norm.apply_RMSNorm(gdesc.final_norm, x)
 
-        # lax.scan is slower
-        return x @ gdesc.embed.T
+        # take last token and unembed
+        return x.at[:, -1].get() @ gdesc.embed.T
 
     return fwd
 
@@ -200,6 +196,47 @@ def init_gemma(d_model: int,
     )
 
 
+def load_gemma_model():
+    """
+    Load Gemma 2B
+    """
+    params = load_model()
+
+    embed = params["model.embed_tokens.weight"]
+    final_norm = norm.RMSNormDescriptor(params["model.norm.weight"])
+
+    blocks = []
+    print("loading blocks")
+    for i in range(18):
+        atn = attention.AtnDescriptor(
+            q_proj=jnp.reshape(params[f"model.layers.{i}.self_attn.q_proj.weight"], (8, 256, 2048)),
+            k_proj=jnp.reshape(params[f"model.layers.{i}.self_attn.k_proj.weight"], (1, 256, 2048)),
+            v_proj=jnp.reshape(params[f"model.layers.{i}.self_attn.v_proj.weight"], (1, 256, 2048)),
+            o_proj=params[f"model.layers.{i}.self_attn.o_proj.weight"],
+        )
+        prenorm = norm.RMSNormDescriptor(params[f"model.layers.{i}.input_layernorm.weight"])
+        postnorm = norm.RMSNormDescriptor(params[f"model.layers.{i}.post_attention_layernorm.weight"])
+        curr = GemmaBlockDescriptor(
+            up_proj=params[f"model.layers.{i}.mlp.up_proj.weight"],
+            gate_proj=params[f"model.layers.{i}.mlp.gate_proj.weight"],
+            down_proj=params[f"model.layers.{i}.mlp.down_proj.weight"],
+            atn=atn,
+            prenorm=prenorm,
+            postnorm=postnorm
+        )
+
+        blocks.append(curr)
+ 
+    return GemmaDescriptor(
+        d_model=2048,
+        n_heads=8,
+        rope=init_RoPE(256),    # head dim is 256
+        embed=embed,
+        final_norm=final_norm,
+        blocks=blocks
+    )
+
+
 def count_params(desc: GemmaDescriptor):
     """
     Count number of parameters in GEMMA model
@@ -229,22 +266,35 @@ if __name__ == "__main__":
     n_heads = 8
     vocab_size = 256128     # don't go past this
 
+    TEST_STR = r"Q: What's the capital of France?\nA:"
+
     # test params
-    runs = 1000
+    runs = 100
 
-    gem = init_gemma(d_model, d_up, H_dim, n_heads, vocab_size, n_blocks)
+    tk = load_tokenizer(r"/media/roy/TOSHIBA EXT/models/gemma-2b/tokenizer.model")
 
-    print(f"Created model with {count_params(gem)} params")
-    # dummy batch of 1 sequence of 3 tokens
-    x = jnp.array([[1, 2, 3],])
+    # this is identical in structure
+    # gem = init_gemma(d_model, d_up, H_dim, n_heads, vocab_size, n_blocks)
+
+    # loading the real thing
+    gem = load_gemma_model()
+
+    seq = encode_str(TEST_STR, tk)
+    print(f"parameter count:{count_params(gem)}")
     fwd = jax.checkpoint(construct_gemma_forward(gem))
 
-    # NOTE: jit compilation takes up a lot of cpu memory
-    print("Compiling forward pass")
-    start = time()
-    gemma_forward = jax.jit(fwd)
-    c = gemma_forward(x, gem).block_until_ready()    # warmup, JAX is lazy
-    print("Compiled in ", time() - start, "seconds")
+    # shitty correctness test
+    for i in range(3):
+        x = jnp.expand_dims(jnp.array(seq), 0)
+        print("Compiling forward pass")
+        start = time()
+        gemma_forward = jax.jit(fwd)
+        c = gemma_forward(x, gem).block_until_ready()    # warmup, JAX is lazy
+        print("Compiled in ", time() - start, "seconds")
+
+        res = jnp.argmax(c, axis=-1).tolist()
+        seq += res
+        print(f"response: {decode_tk(res, tk)}")
 
     print(f"timing forward pass on {runs} runs")
     t_delta_sum = 0

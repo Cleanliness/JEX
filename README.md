@@ -24,7 +24,7 @@ gemma 2B
 - [x] Layernorm
 - [x] Multi-query attention 
 - [x] Multi-head attention
-- [ ] Causal attention
+- [x] Causal attention
 - [x] Positional embedding
 - [x] Tokenizer
 - [ ] KV Cache

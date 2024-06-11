@@ -18,7 +18,10 @@ def apply_RMSNorm(RMSDesc: RMSNormDescriptor, x: jnp.ndarray):
         RMSDesc: RMS norm params
         x: (B, seq_len, d_model)
     """
-    return x / jnp.sqrt(jnp.mean(x*x, axis=-1, keepdims=True) + 1e-6) * RMSDesc.scale
+
+
+    normed = x / jnp.sqrt(jnp.mean(x*x, axis=-1, keepdims=True) + 1e-6)
+    return normed * (1 + RMSDesc.scale)
 
 
 if __name__ == "__main__":

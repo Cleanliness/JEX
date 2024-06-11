@@ -20,20 +20,23 @@ def load_tokenizer(path: str) -> spm.SentencePieceProcessor:
     return tokenizer
 
 
-def encode(text: str, tokenizer: spm.SentencePieceProcessor) -> jnp.ndarray:
+def encode_str(text: str, tokenizer: spm.SentencePieceProcessor) -> jnp.ndarray:
     """
-    Encodes a text into a tokenized jnp.ndarray
+    Encodes a text into a tokenized jnp.array
 
     Args:
         text: string to turn into token ids
         tokenizer: loaded sentencepiece model
     """
-    return tokenizer.encode(text)
+
+    # hardcode <bos> for now
+    bos = [2]
+    return bos + tokenizer.encode(text)
 
 
-def decode(arr: jnp.array, tokenizer: spm.SentencePieceProcessor) -> str:
+def decode_tk(arr: jnp.array, tokenizer: spm.SentencePieceProcessor) -> str:
     """
-    Decodes a tokenized jnp.ndarray into a string
+    Decodes a tokenized jnp.array into a string
 
     Args:
         text: tokenized jnp.ndarray to turn into a string
@@ -47,8 +50,8 @@ if __name__ == "__main__":
     print("Loaded tokenizer")
 
     test_str = "bonjour, comment ça va?"
-    encoded = encode(test_str, tokenizer)
-    decoded = decode(encoded, tokenizer)
+    encoded = encode_str(test_str, tokenizer)
+    decoded = decode_tk(encoded, tokenizer)
 
     print(f"expected: {test_str}")
     print(f"got: {decoded}")

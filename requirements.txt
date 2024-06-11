@@ -1,2 +1,3 @@
 jax
 sentencepiece
+safetensors

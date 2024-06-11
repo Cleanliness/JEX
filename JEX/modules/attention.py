@@ -69,11 +69,12 @@ def MQA(q: jnp.array, atn_descriptor: AtnDescriptor, mid_fn=None):
     k_p = jnp.einsum('BTm,Hkm->BHTk', q, atn_descriptor.k_proj)           
     v_p = jnp.einsum('BTm,Hvm->BHTv', q, atn_descriptor.v_proj)
 
+
     q_p, k_p, v_p = mid_fn(q_p, k_p, v_p) if mid_fn is not None else (q_p, k_p, v_p)
 
     # broadcast K to V, recall K has 1 head
     # Q: (B, H, T, d_model), K: (B, 1, T, d_model) -> (B, H, T, T)
-    QK = jnp.einsum('BHTk,BHRk->BHTR', q_p, k_p) / jnp.sqrt(d_k)
+    QK = jnp.tril(jnp.einsum('BHTk,BHRk->BHTR', q_p, k_p)) / jnp.sqrt(d_k)
     attn_weights = jax.nn.softmax(QK, axis=-1)
 
     # apply attention weights to V
