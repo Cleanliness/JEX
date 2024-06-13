@@ -28,6 +28,7 @@ gemma 2B
 - [x] Positional embedding
 - [x] Tokenizer
 - [x] Correctness
+- [ ] Masking
 - [ ] KV Cache
 
 QOL
@@ -36,3 +37,4 @@ QOL
 Later
 - [ ] FlashAttention (CUDA and Triton kernels)
 - [ ] Weight Quantization
+- [ ] Grouped Query attention
