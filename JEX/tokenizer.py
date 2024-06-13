@@ -30,7 +30,8 @@ def encode_str(text: str, tokenizer: spm.SentencePieceProcessor) -> jnp.ndarray:
     """
 
     # hardcode <bos> for now
-    bos = [2]
+    bos = [tokenizer.bos_id()]
+    c = tokenizer.EncodeAsIds(text)
     return bos + tokenizer.encode(text)
 
 
@@ -62,3 +63,8 @@ if __name__ == "__main__":
     import psutil
     process = psutil.Process(os.getpid())
     print(f"Memory used: {process.memory_info().rss / 1024**2} MB")
+
+    print(encode_str("Q:What's the capital of France?\nA:", tokenizer))
+    print(encode_str("Paris", tokenizer))
+
+    print(decode_tk([7127], tokenizer))

@@ -27,8 +27,12 @@ gemma 2B
 - [x] Causal attention
 - [x] Positional embedding
 - [x] Tokenizer
+- [x] Correctness
 - [ ] KV Cache
 
+QOL
+- [ ] clean up gemma.py
+    - [ ] move benchmarks/tests into other scripts
 Later
 - [ ] FlashAttention (CUDA and Triton kernels)
 - [ ] Weight Quantization

@@ -69,7 +69,7 @@ def apply_RoPE(x: jnp.ndarray, m: jnp.ndarray, rotary_descriptor: RoPEDescriptor
     first_sum = first * rot1 - second * rot2
     second_sum = first * rot2 + second * rot1
 
-    return jnp.concatenate([first_sum, second_sum], axis=1).astype(jnp.bfloat16)
+    return jnp.concatenate([first_sum, second_sum], axis=1)
 
 # multi-head and batched multi-head
 # Multi head: (T, d), (T,) -> (T, d) |==> (H, T, d), (T,) -> (H, T, d)
@@ -91,13 +91,13 @@ if __name__ == "__main__":
     # print("=== Result ===")
     # print(apply_RoPE(x, jnp.arange(T), desc))
 
-    desc = init_RoPE(4)
+    desc = init_RoPE(4, theta_max=100)
 
     # single
     # (T, d) = (1, 4)
     expected = jnp.array([[-1.1311126,  0.6598157, -0.8488725,  1.2508571]])
     m = jnp.array([3])
-    print(apply_RoPE(jnp.ones((1, 4)), m, desc))
+    print(jnp.allclose(apply_RoPE(jnp.ones((1, 4)), m, desc), expected))
 
 
     # batched test

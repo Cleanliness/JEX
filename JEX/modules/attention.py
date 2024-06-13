@@ -4,6 +4,9 @@ from jax.experimental import pallas as pl       # triton-like API
 
 from typing import NamedTuple
 
+# replacing upper triangular with this -> zero out in softmax
+CAUSAL_CONST = -jnp.inf
+
 
 class AtnDescriptor(NamedTuple):
     """
@@ -62,19 +65,25 @@ def MQA(q: jnp.array, atn_descriptor: AtnDescriptor, mid_fn=None):
         mid_fn: intermediate function to transform Q/K/V before attention
     """
     d_k = atn_descriptor.q_proj.shape[-1]
+    T = q.shape[1]
 
     # project: (B, H, T, d_model) -> (B, H, T, d_k)
     # contraction along d_model (m)
     q_p = jnp.einsum('BTm,Hkm->BHTk', q, atn_descriptor.q_proj)
-    k_p = jnp.einsum('BTm,Hkm->BHTk', q, atn_descriptor.k_proj)           
+    k_p = jnp.einsum('BTm,Hkm->BHTk', q, atn_descriptor.k_proj)
     v_p = jnp.einsum('BTm,Hvm->BHTv', q, atn_descriptor.v_proj)
 
-
+    # accomodate some intermediate function (usually scaling/positional encoding)
     q_p, k_p, v_p = mid_fn(q_p, k_p, v_p) if mid_fn is not None else (q_p, k_p, v_p)
 
     # broadcast K to V, recall K has 1 head
     # Q: (B, H, T, d_model), K: (B, 1, T, d_model) -> (B, H, T, T)
-    QK = jnp.tril(jnp.einsum('BHTk,BHRk->BHTR', q_p, k_p)) / jnp.sqrt(d_k)
+    QK = jnp.tril(jnp.einsum('BHTk,BHRk->BHTR', q_p, k_p))
+
+    # mask out upper triangular (causal)
+    # (1, 1, T, T) 
+    mask = (jnp.triu(jnp.full((T, T), CAUSAL_CONST), 1))[None, None, ...]
+    QK = QK + mask
     attn_weights = jax.nn.softmax(QK, axis=-1)
 
     # apply attention weights to V
@@ -132,3 +141,29 @@ if __name__ == "__main__":
     res_jit = MQA_jit(x, desc)
 
     print(f"JIT parity: {jnp.allclose(res, res_jit)}")
+    print(f"frobenius: {jnp.linalg.norm((res - res_jit).flatten())}")
+
+    # test correctness
+    T = 4
+    d_model = 2
+
+    # B = 1, T = 4, d_model = 2
+    x = jnp.arange(1, 5)[None, :, None]
+    x = jnp.repeat(x, d_model, axis=-1)
+
+    q_proj = jnp.ones((1, 1, d_model))
+    k_proj = jnp.ones((1, 1, d_model))
+    v_proj = jnp.ones((1, 1, d_model))
+    o_proj = jnp.ones((d_model, 2))
+
+    desc = AtnDescriptor(q_proj, k_proj, v_proj, o_proj)
+    res = MQA(x, desc)[:, :, 0].flatten()
+
+    print("=== Correctness ===")
+    print("Match:", jnp.allclose(res, jnp.array([2, 4, 6, 8])))
+    print(f"frobenius: {jnp.linalg.norm((res - jnp.array([2,4,6,8])))}")
+
+    # test Multi query case
+    q_proj = jnp.ones((2, 1, d_model))
+    desc = AtnDescriptor(q_proj, k_proj, v_proj, o_proj)
+    res = MQA(x, desc)

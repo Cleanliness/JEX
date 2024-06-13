@@ -2,10 +2,12 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 
-def gelu(x):
+def gelu(x, approx=True):
     """
     Gaussian Error Linear Unit
     """
+    if approx:
+        return jax.nn.gelu(x, approximate=True)
     return 0.5*x*(1 + jax.scipy.special.erf(x / jnp.sqrt(2)))
 
 
@@ -65,3 +67,16 @@ if __name__ == "__main__":
 
     print("shape:", r1.shape)
     print("JIT parity:", jnp.allclose(r1, r2))
+
+    print("====== correctness ======")
+    features = 2
+    hidden_dim = 3
+
+    x = jnp.arange(1, 3)[:, None, None]
+
+    # (B, T, features)
+    x = jnp.repeat(x, features, axis=-1)
+
+    res = GLU(x, jnp.ones((hidden_dim, features)), jnp.ones((hidden_dim, features)), 0, 0)
+    res = res @ jnp.ones((hidden_dim, features))
+    b = 3

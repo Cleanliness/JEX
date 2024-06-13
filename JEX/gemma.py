@@ -46,14 +46,20 @@ class GemmaBlockDescriptor(NamedTuple):
 
 # ==== gemma specific functions ====
 gemma_GeGLU = partial(activations.GLU, b1=0.0, b2=0.0)
+approx_gelu = partial(jax.nn.gelu, approximate=True)
 def qk_rope(q, k, v, rd):
     """
-    Apply rope to queries and keys
+    Apply rope to queries and keys after qkv projection
     """
     B = q.shape[0]
     T = q.shape[2]
+    d_model = q.shape[-1]
     m = jnp.tile(jnp.arange(T), B).reshape(B, T)
-    return pos_embedding.apply_rope_batch(q, m, rd), pos_embedding.apply_rope_batch(k, m, rd), v
+
+    q_rope = pos_embedding.apply_rope_batch(q, m, rd)
+    k_rope = pos_embedding.apply_rope_batch(k, m, rd)
+    return q_rope / jnp.sqrt(d_model), k_rope, v
+
 
 # ==== gemma forward pass ====
 def embed_tokens(tokens: jnp.array, emb: jnp.array):
@@ -61,11 +67,11 @@ def embed_tokens(tokens: jnp.array, emb: jnp.array):
     Embeds tokens into activation space and apply positional encoding
 
     Args:
-        tokens: (B, N) sequence of token ids
+        tokens: (B, T) sequence of token ids
         desc: GemmaDescriptor
     """
 
-    x = jnp.take(emb, tokens, axis=0)
+    x = (jnp.take(emb, tokens, axis=0) * jnp.sqrt(emb.shape[-1]).astype(jnp.bfloat16))
     return x
 
 
@@ -74,20 +80,21 @@ def apply_gemma_block(x: jnp.array, desc: GemmaBlockDescriptor, mid_fn=None):
     GEMMA block
     """
     # pre-attn norm
-    x = norm.apply_RMSNorm(desc.prenorm, x)
+    x_norm = norm.apply_RMSNorm(desc.prenorm, x)
 
     # self attention
-    v = attention.MQA(x, desc.atn, mid_fn=mid_fn)
+    v = attention.MQA(x_norm, desc.atn, mid_fn=mid_fn)
 
     # add to residual stream, apply norm
-    x = x + v
-    x = norm.apply_RMSNorm(desc.postnorm, x)
+    x += v
+    post_atn = norm.apply_RMSNorm(desc.postnorm, x)
 
     # apply MLP (B, T, d_model) -> (B, T, d_g)
-    x = gemma_GeGLU(x, desc.gate_proj, desc.up_proj)
-    
-    # project back to d_model
-    return x @ desc.down_proj.T
+    post_atn = gemma_GeGLU(post_atn, desc.gate_proj, desc.up_proj, gate_fn=approx_gelu)
+    post_atn = post_atn @ desc.down_proj.T 
+
+    # add back to residual stream
+    return x + post_atn
 
 
 def construct_gemma_forward(desc: GemmaDescriptor):
@@ -102,7 +109,7 @@ def construct_gemma_forward(desc: GemmaDescriptor):
     qk_rope_fn = partial(qk_rope, rd=desc.rope)
     def fwd(x: jnp.array, gdesc: GemmaDescriptor):
         # deepmind multiplies by sqrt(d_model) for some reason
-        x = embed_tokens(x, gdesc.embed)*jnp.sqrt(gdesc.d_model).astype(jnp.bfloat16)
+        x = embed_tokens(x, gdesc.embed).astype(jnp.bfloat16)
 
         # JAX unrolls this loop when jitting
         # lax.scan is slower
@@ -207,6 +214,7 @@ def load_gemma_model():
 
     blocks = []
     print("loading blocks")
+
     for i in range(18):
         atn = attention.AtnDescriptor(
             q_proj=jnp.reshape(params[f"model.layers.{i}.self_attn.q_proj.weight"], (8, 256, 2048)),
@@ -266,6 +274,11 @@ if __name__ == "__main__":
     n_heads = 8
     vocab_size = 256128     # don't go past this
 
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    correct_logits = jnp.array(np.load("/home/roy/Documents/Programming/JEMMA/test/gemma-2b.npz")["logits"])
+    correct_hiddens = jnp.array(np.load("/home/roy/Documents/Programming/JEMMA/test/gemma-2b-layers.npz")["outs"])
     TEST_STR = r"Q: What's the capital of France?\nA:"
 
     # test params
@@ -283,19 +296,39 @@ if __name__ == "__main__":
     print(f"parameter count:{count_params(gem)}")
     fwd = jax.checkpoint(construct_gemma_forward(gem))
 
-    # shitty correctness test
-    for i in range(3):
-        x = jnp.expand_dims(jnp.array(seq), 0)
+    # a better correctness test
+    # qk_rope_fn = partial(qk_rope, rd=gem.rope)
+    # all_acts = []
+    # for i in range(18):
+    #     test_x = jnp.ones((1, 1, 2048))
+    #     test_res = apply_gemma_block(test_x, gem.blocks[i], mid_fn=qk_rope_fn)
+    #     diff = test_res - correct_hiddens[i]
+    #     all_acts.append(diff)
+
+    #     plt.hist(diff.flatten(), bins=100)
+    #     plt.savefig(f"layer_{i}_diff.png")
+    #     plt.close()
+    #     print("finished layer", i)
+
+    # all_acts = jnp.array(all_acts)
+    # plt.hist(all_acts.flatten(), bins=500)
+    # plt.savefig("all_layer_diff.png")
+
+    # quit()
+    # crappy correctness test
+    for i in range(8):
+        x = jnp.expand_dims(jnp.array(seq).astype(jnp.int32), 0)
         print("Compiling forward pass")
         start = time()
         gemma_forward = jax.jit(fwd)
-        c = gemma_forward(x, gem).block_until_ready()    # warmup, JAX is lazy
+        logits = gemma_forward(x, gem).block_until_ready()    # warmup, JAX is lazy
         print("Compiled in ", time() - start, "seconds")
 
-        res = jnp.argmax(c, axis=-1).tolist()
+        res = jnp.argmax(logits, axis=-1).tolist()
         seq += res
         print(f"response: {decode_tk(res, tk)}")
-
+    
+    # ==== Benchmarking ====
     print(f"timing forward pass on {runs} runs")
     t_delta_sum = 0
 
