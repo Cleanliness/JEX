@@ -5,36 +5,37 @@
 # https://github.com/google-deepmind/gemma/tree/main
 # ^google's implementation in flax
 
+
 import jax
-import jax.ad_checkpoint
 import jax.numpy as jnp
-from modules import attention, activations, norm, pos_embedding
 from typing import NamedTuple, Optional
 from functools import partial
 
 from time import time
-from read_model import load_model 
-from tokenizer import load_tokenizer, encode_str, decode_tk
-from modules.pos_embedding import init_RoPE
+
+# intra-package references: https://docs.python.org/3/tutorial/modules.html
+# NOTE: relative imports only work inside packages
+from .read_model import load_model 
+from .layers.pos_embedding import init_RoPE
+from .layers import attention, activations, norm, pos_embedding
 
 
 class GemmaDescriptor(NamedTuple):
     """
-    Contains state of a GEMMA model
+    Contains state of a Gemma model
     """
-    d_model: int                          # activation space dimension
+    d_model: int                          # residual stream dimension
     n_heads: int                          # num heads in MHA or number of query heads in MQA
     rope: pos_embedding.RoPEDescriptor    # RoPE angles
     embed: jnp.array                      # embedding matrix (vocab_size, d_model)
     final_norm: norm.RMSNormDescriptor    # Final layer normalization
     unembed: Optional[jnp.array] = None   # None = shared with embedding
     blocks: list[NamedTuple] = None       # decoder blocks
-    kv_cache: Optional[jnp.array] = None  # TODO: key-value cache for MQA
 
 
 class GemmaBlockDescriptor(NamedTuple):
     """
-    Contains params for GEMMA block
+    Contains params for Gemma block
     """
     up_proj: jnp.array
     gate_proj: jnp.array
@@ -47,14 +48,20 @@ class GemmaBlockDescriptor(NamedTuple):
 # ==== gemma specific functions ====
 gemma_GeGLU = partial(activations.GLU, b1=0.0, b2=0.0)
 approx_gelu = partial(jax.nn.gelu, approximate=True)
-def qk_rope(q, k, v, rd):
+
+
+def qk_rope(q, k, v, rd, t: int=None):
     """
     Apply rope to queries and keys after qkv projection
     """
     B = q.shape[0]
     T = q.shape[2]
     d_model = q.shape[-1]
-    m = jnp.tile(jnp.arange(T), B).reshape(B, T)
+
+    if t is None:
+        m = jnp.tile(jnp.arange(T), B).reshape(B, T)
+    else:
+        m = jnp.tile(jnp.array([t]), B).reshape(B, 1)       
 
     q_rope = pos_embedding.apply_rope_batch(q, m, rd)
     k_rope = pos_embedding.apply_rope_batch(k, m, rd)
@@ -75,18 +82,41 @@ def embed_tokens(tokens: jnp.array, emb: jnp.array):
     return x
 
 
-def apply_gemma_block(x: jnp.array, desc: GemmaBlockDescriptor, mid_fn=None):
+def apply_gemma_block(x: jnp.array, 
+                      desc: GemmaBlockDescriptor,
+                      KV_size: int=256,
+                      mid_fn=None,
+                      K_cache: jnp.array=None,
+                      V_cache: jnp.array=None,
+                      t: int=None):
     """
-    GEMMA block
+    GEMMA block forward pass
     """
+    B = x.shape[0]
+    H = desc.atn.k_proj.shape[0]
+    d_k = desc.atn.k_proj.shape[1]
+    d_v = desc.atn.v_proj.shape[1]
+
     # pre-attn norm
     x_norm = norm.apply_RMSNorm(desc.prenorm, x)
+    q, k, v = attention.apply_qkv_proj(x_norm, desc.atn)
+    q, k, v = mid_fn(q, k, v, t=t) if mid_fn is not None else (q, k, v)
 
     # self attention
-    v = attention.MQA(x_norm, desc.atn, mid_fn=mid_fn)
+    # no cache
+    if t is None:
+        o = attention.MQA(q, k, v, desc.atn)
+        T_v = v.shape[2]
+        K_cache = jnp.zeros((B, H, KV_size, d_k)).at[:, :, :T_v].set(k)
+        V_cache = jnp.zeros((B, H, KV_size, d_v)).at[:, :, :T_v].set(v)
+
+
+    # cache exists, only compute a single timestep
+    else:
+        o, K_cache, V_cache = attention.MQA_cached(x_norm, K_cache, V_cache, t, desc.atn)
 
     # add to residual stream, apply norm
-    x += v
+    x += o
     post_atn = norm.apply_RMSNorm(desc.postnorm, x)
 
     # apply MLP (B, T, d_model) -> (B, T, d_g)
@@ -94,37 +124,55 @@ def apply_gemma_block(x: jnp.array, desc: GemmaBlockDescriptor, mid_fn=None):
     post_atn = post_atn @ desc.down_proj.T 
 
     # add back to residual stream
-    return x + post_atn
+    return x + post_atn, K_cache, V_cache
 
 
 def construct_gemma_forward(desc: GemmaDescriptor):
     """
-    create jittable forward pass of GEMMA 
+    create jittable forward pass of GEMMA. Computes whole atn matrix in one go
 
     Args:
-        x: (B, N) sequence of token ids
         desc: GemmaDescriptor
     """
 
     qk_rope_fn = partial(qk_rope, rd=desc.rope)
-    def fwd(x: jnp.array, gdesc: GemmaDescriptor):
+
+    # TODO: replace hardcoded KV size
+    blk = partial(apply_gemma_block, KV_size=256, mid_fn=qk_rope_fn)
+
+    def fwd(x: jnp.array, gdesc: GemmaDescriptor, kv: tuple[list[jnp.array]]=None,  t: int=None):
         # deepmind multiplies by sqrt(d_model) for some reason
         x = embed_tokens(x, gdesc.embed).astype(jnp.bfloat16)
 
+        if kv is None:
+            k_cache = [None for _ in range(len(gdesc.blocks))]
+            v_cache = [None for _ in range(len(gdesc.blocks))]
+        else:
+            k_cache, v_cache = kv
+
         # JAX unrolls this loop when jitting
         # lax.scan is slower
-        for block in gdesc.blocks:
-            x = apply_gemma_block(x, block, mid_fn=qk_rope_fn)
-        
+        for i, block in enumerate(gdesc.blocks):
+            x, k, v = blk(x, block, K_cache=k_cache[i], V_cache=v_cache[i], t=t)
+
+            # this doesn't actually mutate the pytree, seems to copy it
+            # we need to return the descriptor at the end for statefulness
+            k_cache[i] = k
+            v_cache[i] = v
+
         x = norm.apply_RMSNorm(gdesc.final_norm, x)
 
-        # take last token and unembed
-        return x.at[:, -1].get() @ gdesc.embed.T
+        # pytrees are copied on return for jit!!!
+        # only return what gets modified to save memory
+        kv = (k_cache, v_cache)
+
+        # unembed
+        return x.at[:, -1].get() @ gdesc.embed.T, kv
 
     return fwd
 
 
-def init_gemma(d_model: int,
+def make_gemma(d_model: int,
                d_up: int,
                H_dim: int,
                n_heads: int, 
@@ -234,6 +282,7 @@ def load_gemma_model():
         )
 
         blocks.append(curr)
+    
  
     return GemmaDescriptor(
         d_model=2048,
@@ -241,7 +290,7 @@ def load_gemma_model():
         rope=init_RoPE(256),    # head dim is 256
         embed=embed,
         final_norm=final_norm,
-        blocks=blocks
+        blocks=blocks,
     )
 
 
@@ -263,84 +312,3 @@ def count_params(desc: GemmaDescriptor):
         n_params += block.postnorm.scale.size
 
     return n_params, embed_params
-
-
-if __name__ == "__main__":
-    # model params 
-    d_model = 2048
-    n_blocks = 18
-    d_up = 16384
-    H_dim = 256
-    n_heads = 8
-    vocab_size = 256128     # don't go past this
-
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    correct_logits = jnp.array(np.load("/home/roy/Documents/Programming/JEMMA/test/gemma-2b.npz")["logits"])
-    correct_hiddens = jnp.array(np.load("/home/roy/Documents/Programming/JEMMA/test/gemma-2b-layers.npz")["outs"])
-    TEST_STR = r"Q: What's the capital of France?\nA:"
-
-    # test params
-    runs = 100
-
-    tk = load_tokenizer(r"/media/roy/TOSHIBA EXT/models/gemma-2b/tokenizer.model")
-
-    # this is identical in structure
-    # gem = init_gemma(d_model, d_up, H_dim, n_heads, vocab_size, n_blocks)
-
-    # loading the real thing
-    gem = load_gemma_model()
-
-    seq = encode_str(TEST_STR, tk)
-    print(f"parameter count:{count_params(gem)}")
-    fwd = jax.checkpoint(construct_gemma_forward(gem))
-
-    # a better correctness test
-    # qk_rope_fn = partial(qk_rope, rd=gem.rope)
-    # all_acts = []
-    # for i in range(18):
-    #     test_x = jnp.ones((1, 1, 2048))
-    #     test_res = apply_gemma_block(test_x, gem.blocks[i], mid_fn=qk_rope_fn)
-    #     diff = test_res - correct_hiddens[i]
-    #     all_acts.append(diff)
-
-    #     plt.hist(diff.flatten(), bins=100)
-    #     plt.savefig(f"layer_{i}_diff.png")
-    #     plt.close()
-    #     print("finished layer", i)
-
-    # all_acts = jnp.array(all_acts)
-    # plt.hist(all_acts.flatten(), bins=500)
-    # plt.savefig("all_layer_diff.png")
-
-    # quit()
-    # crappy correctness test
-    for i in range(8):
-        x = jnp.expand_dims(jnp.array(seq).astype(jnp.int32), 0)
-        print("Compiling forward pass")
-        start = time()
-        gemma_forward = jax.jit(fwd)
-        logits = gemma_forward(x, gem).block_until_ready()    # warmup, JAX is lazy
-        print("Compiled in ", time() - start, "seconds")
-
-        res = jnp.argmax(logits, axis=-1).tolist()
-        seq += res
-        print(f"response: {decode_tk(res, tk)}")
-    
-    # ==== Benchmarking ====
-    print(f"timing forward pass on {runs} runs")
-    t_delta_sum = 0
-
-    for i in range(runs):
-        start = time()
-        c = gemma_forward(x, gem).block_until_ready()
-        t_delta_sum += time() - start
-        x += 1
-    
-    delta_avg = t_delta_sum / runs
-    print("Average time: ", delta_avg, "seconds")
-    
-    # this probably sucks because no KV cache
-    print("Tokens/second: ", 1 / delta_avg)
-
