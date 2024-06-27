@@ -9,7 +9,7 @@ Hardware:
 Benchmarking parameters:
 - 1 batch size
 - 256 sequence length
-- Gemma 1 2B
+- Gemma 1 2B, bf16
 - Mean time over 100 runs
 
 | Version | Tokens/s | Notes |
